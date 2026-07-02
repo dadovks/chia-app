@@ -843,7 +843,7 @@ function openModal(){ document.getElementById('modal').classList.add('open'); }
 function closeModal(){ document.getElementById('modal').classList.remove('open'); }
 
 // ── CONTADOR DE CALORIAS IA ───────────────────────────────────
-const ANTHROPIC_KEY = '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';
+const RENDER_URL = 'https://dc-digital-agentes-g723.onrender.com';
 
 function previewFoto(input) {
   if (!input.files || !input.files[0]) return;
@@ -888,34 +888,24 @@ async function analisarFoto() {
     if (loadingTxt) loadingTxt.textContent = 'Processando imagem...';
     var base64 = await redimensionarImagem(preview, 600);
 
-    if (loadingTxt) loadingTxt.textContent = 'A IA está analisando...';
+    if (loadingTxt) loadingTxt.textContent = 'A IA está analisando seu prato...';
 
-    var res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_KEY,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-allow-browser': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 500,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } },
-            { type: 'text', text: 'Nutricionista, analise e responda SÓ este JSON:\n{"calorias":400,"proteinas":30,"carboidratos":40,"gorduras":10,"alimentos":["frango"],"observacao":"dica curta"}' }
-          ]
-        }]
-      })
-    });
+    var ctrl = new AbortController();
+    var tid = setTimeout(function(){ ctrl.abort(); }, 90000);
+    var res;
+    try {
+      res = await fetch(RENDER_URL + '/analisar-foto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imagem_base64: base64 }),
+        signal: ctrl.signal
+      });
+      clearTimeout(tid);
+    } catch(e) { clearTimeout(tid); throw e; }
 
-    if (!res.ok) { var err = await res.json(); throw new Error(err.error?.message || 'Erro ' + res.status); }
+    if (!res.ok) throw new Error('Erro ' + res.status);
     var data = await res.json();
-    var match = data.content[0].text.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('Resposta inválida');
-    mostrarResultado(JSON.parse(match[0]));
+    mostrarResultado(data);
 
   } catch(e) {
     document.getElementById('ia-alimentos').innerHTML = `<div style="color:#E8731A;font-weight:600;">❌ ${e.message || 'Erro ao analisar. Tente novamente.'}</div>`;
