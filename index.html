@@ -843,7 +843,7 @@ function openModal(){ document.getElementById('modal').classList.add('open'); }
 function closeModal(){ document.getElementById('modal').classList.remove('open'); }
 
 // ── CONTADOR DE CALORIAS IA ───────────────────────────────────
-const RENDER_URL = 'https://dc-digital-agentes.onrender.com';
+const ANTHROPIC_KEY = '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';
 
 function previewFoto(input) {
   if (!input.files || !input.files[0]) return;
@@ -885,43 +885,37 @@ async function analisarFoto() {
   resultado.style.display = 'none';
 
   try {
-    // Passo 1: Acorda o servidor (compatível com todos os iOS)
-    if (loadingTxt) loadingTxt.textContent = 'Acordando servidor...';
-    await new Promise(function(resolve) {
-      var ctrl = new AbortController();
-      var tid = setTimeout(function(){ ctrl.abort(); resolve(); }, 40000);
-      fetch(RENDER_URL + '/', { signal: ctrl.signal })
-        .then(function(){ clearTimeout(tid); resolve(); })
-        .catch(function(){ clearTimeout(tid); resolve(); });
+    if (loadingTxt) loadingTxt.textContent = 'Processando imagem...';
+    var base64 = await redimensionarImagem(preview, 600);
+
+    if (loadingTxt) loadingTxt.textContent = 'A IA está analisando...';
+
+    var res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_KEY,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-allow-browser': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 500,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } },
+            { type: 'text', text: 'Nutricionista, analise e responda SÓ este JSON:\n{"calorias":400,"proteinas":30,"carboidratos":40,"gorduras":10,"alimentos":["frango"],"observacao":"dica curta"}' }
+          ]
+        }]
+      })
     });
 
-    // Passo 2: Redimensiona imagem
-    if (loadingTxt) loadingTxt.textContent = 'Processando imagem...';
-    var base64 = await redimensionarImagem(preview);
-
-    // Passo 3: Envia para análise
-    if (loadingTxt) loadingTxt.textContent = 'A IA está analisando seu prato...';
-
-    var ctrl2 = new AbortController();
-    var tid2 = setTimeout(function(){ ctrl2.abort(); }, 90000);
-
-    var res;
-    try {
-      res = await fetch(RENDER_URL + '/analisar-foto', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imagem_base64: base64 }),
-        signal: ctrl2.signal
-      });
-      clearTimeout(tid2);
-    } catch(fetchErr) {
-      clearTimeout(tid2);
-      throw fetchErr;
-    }
-
-    if (!res.ok) throw new Error('Erro no servidor: ' + res.status);
+    if (!res.ok) { var err = await res.json(); throw new Error(err.error?.message || 'Erro ' + res.status); }
     var data = await res.json();
-    mostrarResultado(data);
+    var match = data.content[0].text.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('Resposta inválida');
+    mostrarResultado(JSON.parse(match[0]));
 
   } catch(e) {
     document.getElementById('ia-alimentos').innerHTML = `<div style="color:#E8731A;font-weight:600;">❌ ${e.message || 'Erro ao analisar. Tente novamente.'}</div>`;
