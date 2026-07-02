@@ -844,6 +844,18 @@ function closeModal(){ document.getElementById('modal').classList.remove('open')
 
 // ── CONTADOR DE CALORIAS IA ───────────────────────────────────
 const RENDER_URL = 'https://dc-digital-agentes-g723.onrender.com';
+var serverReady = false;
+
+function acordarServidor() {
+  fetch(RENDER_URL + '/').then(function(r) {
+    if (r.ok) { serverReady = true; console.log('Servidor acordado!'); }
+  }).catch(function() {});
+}
+
+// Acorda o servidor assim que o app carrega
+window.addEventListener('DOMContentLoaded', function() {
+  setTimeout(acordarServidor, 2000);
+});
 
 function previewFoto(input) {
   if (!input.files || !input.files[0]) return;
@@ -885,23 +897,31 @@ async function analisarFoto() {
   resultado.style.display = 'none';
 
   try {
+    // Se servidor não acordou ainda, espera até 60s
+    if (!serverReady) {
+      if (loadingTxt) loadingTxt.textContent = 'Acordando servidor (até 60s na 1ª vez)...';
+      var tentativas = 0;
+      while (!serverReady && tentativas < 12) {
+        await new Promise(function(r){ setTimeout(r, 5000); });
+        tentativas++;
+        try {
+          var ping = await fetch(RENDER_URL + '/');
+          if (ping.ok) { serverReady = true; }
+        } catch(e) {}
+      }
+      if (!serverReady) throw new Error('Servidor demorou muito. Tente em 1 minuto.');
+    }
+
     if (loadingTxt) loadingTxt.textContent = 'Processando imagem...';
     var base64 = await redimensionarImagem(preview, 600);
 
     if (loadingTxt) loadingTxt.textContent = 'A IA está analisando seu prato...';
 
-    var ctrl = new AbortController();
-    var tid = setTimeout(function(){ ctrl.abort(); }, 90000);
-    var res;
-    try {
-      res = await fetch(RENDER_URL + '/analisar-foto', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imagem_base64: base64 }),
-        signal: ctrl.signal
-      });
-      clearTimeout(tid);
-    } catch(e) { clearTimeout(tid); throw e; }
+    var res = await fetch(RENDER_URL + '/analisar-foto', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imagem_base64: base64 })
+    });
 
     if (!res.ok) throw new Error('Erro ' + res.status);
     var data = await res.json();
